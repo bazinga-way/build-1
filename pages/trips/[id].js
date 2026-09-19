@@ -59,6 +59,16 @@ export default function TripDetail() {
 
   async function handleConfirmBooking(e) {
     e.preventDefault();
+
+    if (!agentId && !newAgentName.trim()) {
+      alert('Please select an existing agent or enter a new agent name.');
+      return;
+    }
+    if (!cargoDescription.trim()) {
+      alert('Please enter a cargo description.');
+      return;
+    }
+
     setSaving(true);
 
     let finalAgentId = agentId || null;
