@@ -40,6 +40,16 @@ export default function InvoiceDetail() {
     setInvoice({ ...invoice, status });
   }
 
+  async function handleDelete() {
+    if (!confirm(`Delete invoice ${invoice.invoice_no}? This can't be undone.`)) return;
+    const { error } = await supabase.from('invoices').delete().eq('id', id);
+    if (error) {
+      alert('Could not delete invoice: ' + error.message);
+      return;
+    }
+    router.push('/invoices');
+  }
+
   if (loading) return <p className="center-text">Loading…</p>;
   if (!invoice) return <p className="center-text">Invoice not found.</p>;
 
@@ -87,14 +97,21 @@ export default function InvoiceDetail() {
           </div>
         </div>
 
-        <div className="no-print" style={{ display: 'flex', gap: 8, marginTop: 16 }}>
+        <div className="no-print" style={{ display: 'flex', gap: 8, marginTop: 16, flexWrap: 'wrap', alignItems: 'center' }}>
           <button onClick={() => window.print()}>Export / Print PDF</button>
-          {invoice.status === 'draft' && (
-            <button onClick={() => updateStatus('sent')}>Mark sent</button>
-          )}
-          {invoice.status !== 'paid' && (
-            <button onClick={() => updateStatus('paid')}>Mark paid</button>
-          )}
+          <button onClick={() => router.push(`/invoices/${id}/edit`)}>Edit</button>
+
+          <label htmlFor="statusSelect" style={{ fontSize: 13, color: '#555' }}>Status:</label>
+          <select id="statusSelect" value={invoice.status} onChange={(e) => updateStatus(e.target.value)}>
+            <option value="draft">Draft</option>
+            <option value="sent">Sent</option>
+            <option value="paid">Paid</option>
+            <option value="overdue">Overdue</option>
+          </select>
+
+          <button onClick={handleDelete} style={{ marginLeft: 'auto', color: '#d92d20', border: '1px solid #d92d20', background: 'white' }}>
+            Delete
+          </button>
         </div>
       </main>
     </div>

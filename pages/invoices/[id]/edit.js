@@ -1,23 +1,25 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/router';
-import { supabase } from '../../lib/supabaseClient';
+import { supabase } from '../../../lib/supabaseClient';
 
-export default function NewInvoice() {
+export default function EditInvoice() {
   const router = useRouter();
+  const { id } = router.query;
+
   const [customers, setCustomers] = useState([]);
-  const [deliveredLegs, setDeliveredLegs] = useState([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
 
   const [customerId, setCustomerId] = useState('');
   const [newCustomerName, setNewCustomerName] = useState('');
-  const [tripLegId, setTripLegId] = useState('');
   const [invoiceNo, setInvoiceNo] = useState('');
   const [currency, setCurrency] = useState('USD');
   const [dueDate, setDueDate] = useState('');
-  const [lines, setLines] = useState([{ description: '', amount: '' }]);
+  const [lines, setLines] = useState([{ id: null, description: '', amount: '' }]);
 
   useEffect(() => {
+    if (!id) return;
+
     async function load() {
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) {
@@ -28,19 +30,32 @@ export default function NewInvoice() {
       const { data: customerData } = await supabase.from('customers').select('id, name').order('name');
       setCustomers(customerData || []);
 
-      const { data: legData } = await supabase
-        .from('trip_legs')
-        .select('id, direction, origin, destination, status')
-        .eq('direction', 'outbound')
-        .in('status', ['delivered', 'pod_received', 'closed']);
-      setDeliveredLegs(legData || []);
+      const { data: invoice } = await supabase
+        .from('invoices')
+        .select('id, invoice_no, customer_id, currency, due_date, invoice_lines ( id, description, amount )')
+        .eq('id', id)
+        .single();
 
-      setInvoiceNo('INV-' + Date.now().toString().slice(-6));
+      if (!invoice) {
+        setLoading(false);
+        return;
+      }
+
+      setInvoiceNo(invoice.invoice_no);
+      setCustomerId(invoice.customer_id || '');
+      setCurrency(invoice.currency);
+      setDueDate(invoice.due_date || '');
+      setLines(
+        invoice.invoice_lines.length
+          ? invoice.invoice_lines.map((l) => ({ id: l.id, description: l.description, amount: String(l.amount) }))
+          : [{ id: null, description: '', amount: '' }]
+      );
+
       setLoading(false);
     }
 
     load();
-  }, [router]);
+  }, [id, router]);
 
   function updateLine(index, field, value) {
     const next = [...lines];
@@ -49,7 +64,7 @@ export default function NewInvoice() {
   }
 
   function addLine() {
-    setLines([...lines, { description: '', amount: '' }]);
+    setLines([...lines, { id: null, description: '', amount: '' }]);
   }
 
   function removeLine(index) {
@@ -65,7 +80,7 @@ export default function NewInvoice() {
     }
     const validLines = lines.filter((l) => l.description.trim() && l.amount);
     if (validLines.length === 0) {
-      alert('Please add at least one line item with a description and amount.');
+      alert('Please keep at least one line item with a description and amount.');
       return;
     }
 
@@ -86,41 +101,46 @@ export default function NewInvoice() {
       finalCustomerId = newCustomer.id;
     }
 
-    const { data: invoice, error: invoiceError } = await supabase
+    const { error: invoiceError } = await supabase
       .from('invoices')
-      .insert({
+      .update({
         invoice_no: invoiceNo,
         customer_id: finalCustomerId,
-        trip_leg_id: tripLegId || null,
         currency,
         due_date: dueDate || null,
-        status: 'draft',
       })
-      .select()
-      .single();
+      .eq('id', id);
 
     if (invoiceError) {
-      alert('Could not create invoice: ' + invoiceError.message);
+      alert('Could not update invoice: ' + invoiceError.message);
       setSaving(false);
       return;
     }
 
-    const lineRows = validLines.map((l) => ({
-      invoice_id: invoice.id,
-      description: l.description.trim(),
-      amount: Number(l.amount),
-    }));
-
-    const { error: linesError } = await supabase.from('invoice_lines').insert(lineRows);
-
-    setSaving(false);
-
-    if (linesError) {
-      alert('Invoice created, but line items failed to save: ' + linesError.message);
+    // Simplest reliable approach: replace all line items with the current set
+    const { error: deleteError } = await supabase.from('invoice_lines').delete().eq('invoice_id', id);
+    if (deleteError) {
+      alert('Could not update line items: ' + deleteError.message);
+      setSaving(false);
       return;
     }
 
-    router.push(`/invoices/${invoice.id}`);
+    const { error: insertError } = await supabase.from('invoice_lines').insert(
+      validLines.map((l) => ({
+        invoice_id: id,
+        description: l.description.trim(),
+        amount: Number(l.amount),
+      }))
+    );
+
+    setSaving(false);
+
+    if (insertError) {
+      alert('Could not save line items: ' + insertError.message);
+      return;
+    }
+
+    router.push(`/invoices/${id}`);
   }
 
   if (loading) return <p className="center-text">Loading…</p>;
@@ -129,12 +149,12 @@ export default function NewInvoice() {
     <div className="page">
       <header className="topbar">
         <h1>TransitOps</h1>
-        <button onClick={() => router.push('/invoices')}>← Back</button>
+        <button onClick={() => router.push(`/invoices/${id}`)}>← Back</button>
       </header>
 
       <main className="content">
         <form className="auth-card" onSubmit={handleSubmit} style={{ maxWidth: 'none' }}>
-          <p className="trip-card-title" style={{ marginBottom: 16 }}>New invoice</p>
+          <p className="trip-card-title" style={{ marginBottom: 16 }}>Edit invoice</p>
 
           <label htmlFor="invoiceNo">Invoice number</label>
           <input id="invoiceNo" type="text" value={invoiceNo} onChange={(e) => setInvoiceNo(e.target.value)} />
@@ -159,14 +179,6 @@ export default function NewInvoice() {
               />
             </>
           )}
-
-          <label htmlFor="tripLeg">Trip (optional)</label>
-          <select id="tripLeg" value={tripLegId} onChange={(e) => setTripLegId(e.target.value)}>
-            <option value="">Not tied to a specific trip</option>
-            {deliveredLegs.map((l) => (
-              <option key={l.id} value={l.id}>{l.origin} → {l.destination} ({l.status})</option>
-            ))}
-          </select>
 
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
             <div>
@@ -208,7 +220,7 @@ export default function NewInvoice() {
           <button type="button" onClick={addLine} style={{ marginBottom: 16 }}>+ Add line</button>
 
           <button type="submit" disabled={saving}>
-            {saving ? 'Saving…' : 'Create invoice'}
+            {saving ? 'Saving…' : 'Save changes'}
           </button>
         </form>
       </main>
