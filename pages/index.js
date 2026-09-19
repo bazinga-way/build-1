@@ -53,10 +53,6 @@ export default function Home() {
     router.push('/login');
   }
 
-  function bookReturnCargo(roundTripId) {
-    alert('Return cargo booking screen is coming in the next build step. (Round trip: ' + roundTripId + ')');
-  }
-
   if (loading) return <p className="center-text">Loading…</p>;
 
   // Work out which trucks are busy vs available
@@ -112,7 +108,7 @@ export default function Home() {
             const ret = rt.trip_legs.find((l) => l.direction === 'return');
 
             return (
-              <div className="trip-card" key={rt.id}>
+              <div className="trip-card" key={rt.id} onClick={() => router.push(`/trips/${rt.id}`)} style={{ cursor: 'pointer' }}>
                 <div className="trip-card-header">
                   <p className="trip-card-title">
                     {rt.truck?.plate_no || 'Unassigned truck'} · {rt.driver?.full_name || 'Unassigned driver'}
@@ -128,7 +124,7 @@ export default function Home() {
                   <div className="return-row">
                     <span className="trip-route">← Return</span>
                     {ret.status === 'pending' ? (
-                      <button className="pill pill-danger pill-button" onClick={() => bookReturnCargo(rt.id)}>
+                      <button className="pill pill-danger pill-button" onClick={() => router.push(`/trips/${rt.id}`)}>
                         pending — book now
                       </button>
                     ) : (
