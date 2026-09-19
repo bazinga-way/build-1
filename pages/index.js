@@ -101,6 +101,9 @@ export default function Home() {
         </div>
 
         <h2 className="section-title">Round trips</h2>
+        <button onClick={() => router.push('/trips/new')} style={{ marginBottom: 16 }}>
+          + New round trip
+        </button>
 
         {roundTrips.length === 0 && (
           <p className="empty-state">No active round trips yet. Add one in Supabase → Table Editor → round_trips to see it here.</p>
