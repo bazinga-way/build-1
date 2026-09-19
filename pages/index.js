@@ -74,6 +74,9 @@ export default function Home() {
         <h1>TransitOps</h1>
         <div className="topbar-right">
           <button onClick={() => router.push('/trucks')}>Trucks</button>
+          <button onClick={() => router.push('/drivers')}>Drivers</button>
+          <button onClick={() => router.push('/compliance')}>Compliance</button>
+          <button onClick={() => router.push('/invoices')}>Invoices</button>
           <span>{profile?.full_name || 'Signed in'} · {profile?.role}</span>
           <button onClick={handleSignOut}>Sign out</button>
         </div>
