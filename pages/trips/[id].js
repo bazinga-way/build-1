@@ -32,6 +32,12 @@ export default function TripDetail() {
   const [bookCargo, setBookCargo] = useState('');
   const [bookWeight, setBookWeight] = useState('');
 
+  const [expenses, setExpenses] = useState({}); // { legId: [expense, ...] }
+  const [expandedExpenseLegId, setExpandedExpenseLegId] = useState(null);
+  const [expenseCategory, setExpenseCategory] = useState('fuel');
+  const [expenseAmount, setExpenseAmount] = useState('');
+  const [expenseNotes, setExpenseNotes] = useState('');
+
   useEffect(() => {
     if (!id) return;
     load();
@@ -59,6 +65,20 @@ export default function TripDetail() {
       .order('sequence', { ascending: true });
     setLegs(legData || []);
 
+    if (legData && legData.length > 0) {
+      const { data: expenseData } = await supabase
+        .from('trip_leg_expenses')
+        .select('*')
+        .in('trip_leg_id', legData.map((l) => l.id))
+        .order('created_at', { ascending: false });
+      const grouped = {};
+      (expenseData || []).forEach((exp) => {
+        if (!grouped[exp.trip_leg_id]) grouped[exp.trip_leg_id] = [];
+        grouped[exp.trip_leg_id].push(exp);
+      });
+      setExpenses(grouped);
+    }
+
     const { data: agentData } = await supabase.from('agents').select('id, name');
     setAgents(agentData || []);
 
@@ -70,6 +90,27 @@ export default function TripDetail() {
 
   if (loading) return <p className="center-text">Loading…</p>;
   if (!roundTrip) return <p className="center-text">Round trip not found.</p>;
+
+  async function handleAddExpense(legId) {
+    if (!expenseAmount) {
+      alert('Please enter an amount.');
+      return;
+    }
+    const { error } = await supabase.from('trip_leg_expenses').insert({
+      trip_leg_id: legId,
+      category: expenseCategory,
+      amount: Number(expenseAmount),
+      notes: expenseNotes || null,
+    });
+    if (error) {
+      alert('Could not save expense: ' + error.message);
+      return;
+    }
+    setExpenseAmount('');
+    setExpenseNotes('');
+    setExpandedExpenseLegId(null);
+    load();
+  }
 
   async function handleAddLeg(e) {
     e.preventDefault();
@@ -182,6 +223,43 @@ export default function TripDetail() {
               {leg.customer?.name && <p className="trip-route">Customer: {leg.customer.name}</p>}
               {leg.agent?.name && <p className="trip-route">Agent: {leg.agent.name}</p>}
               {leg.cargo_description && <p className="trip-route">Cargo: {leg.cargo_description}</p>}
+
+              <div style={{ marginTop: 8, borderTop: '1px solid #f2f2f2', paddingTop: 8 }}>
+                {(expenses[leg.id] || []).length > 0 && (
+                  <div style={{ marginBottom: 6 }}>
+                    {expenses[leg.id].map((exp) => (
+                      <div key={exp.id} style={{ fontSize: 12, color: '#666', display: 'flex', justifyContent: 'space-between' }}>
+                        <span style={{ textTransform: 'capitalize' }}>{exp.category}{exp.notes ? ` — ${exp.notes}` : ''}</span>
+                        <span>{exp.currency} {Number(exp.amount).toFixed(2)}</span>
+                      </div>
+                    ))}
+                    <div style={{ fontSize: 12, fontWeight: 600, marginTop: 4, display: 'flex', justifyContent: 'space-between' }}>
+                      <span>Total expenses</span>
+                      <span>{(expenses[leg.id].reduce((s, e) => s + Number(e.amount), 0)).toFixed(2)}</span>
+                    </div>
+                  </div>
+                )}
+
+                {expandedExpenseLegId !== leg.id ? (
+                  <button onClick={() => setExpandedExpenseLegId(leg.id)} style={{ fontSize: 12, padding: '4px 10px' }}>
+                    + Log expense
+                  </button>
+                ) : (
+                  <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
+                    <select value={expenseCategory} onChange={(e) => setExpenseCategory(e.target.value)}>
+                      <option value="fuel">Fuel</option>
+                      <option value="toll">Toll</option>
+                      <option value="border_fee">Border fee</option>
+                      <option value="allowance">Allowance</option>
+                      <option value="other">Other</option>
+                    </select>
+                    <input type="number" placeholder="Amount" value={expenseAmount} onChange={(e) => setExpenseAmount(e.target.value)} style={{ width: 90 }} />
+                    <input type="text" placeholder="Note (optional)" value={expenseNotes} onChange={(e) => setExpenseNotes(e.target.value)} style={{ width: 120 }} />
+                    <button onClick={() => handleAddExpense(leg.id)} style={{ fontSize: 12, padding: '4px 10px' }}>Save</button>
+                    <button onClick={() => setExpandedExpenseLegId(null)} style={{ fontSize: 12, padding: '4px 10px', background: 'white' }}>Cancel</button>
+                  </div>
+                )}
+              </div>
 
               {leg.status === 'pending' && bookingLegId !== leg.id && (
                 <button style={{ marginTop: 8 }} onClick={() => setBookingLegId(leg.id)}>
