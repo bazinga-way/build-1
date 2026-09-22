@@ -12,7 +12,6 @@ export default function Home() {
   useEffect(() => {
     async function load() {
       const { data: { session } } = await supabase.auth.getSession();
-
       if (!session) {
         router.push('/login');
         return;
@@ -25,9 +24,7 @@ export default function Home() {
         .single();
       setProfile(profileData);
 
-      const { data: truckData } = await supabase
-        .from('trucks')
-        .select('id, plate_no, status');
+      const { data: truckData } = await supabase.from('trucks').select('id, plate_no, status');
       setTrucks(truckData || []);
 
       const { data: tripData } = await supabase
@@ -37,7 +34,7 @@ export default function Home() {
           status,
           truck:trucks ( id, plate_no ),
           driver:drivers ( id, full_name ),
-          trip_legs ( id, direction, status, is_empty, origin, destination )
+          trip_legs ( id, direction, status, is_empty, origin, destination, sequence )
         `)
         .eq('status', 'active');
       setRoundTrips(tripData || []);
@@ -55,7 +52,6 @@ export default function Home() {
 
   if (loading) return <p className="center-text">Loading…</p>;
 
-  // Work out which trucks are busy vs available
   const busyTruckIds = new Set(roundTrips.map((rt) => rt.truck?.id).filter(Boolean));
   const availableCount = trucks.filter((t) => t.status === 'active' && !busyTruckIds.has(t.id)).length;
   const inTransitCount = roundTrips.filter((rt) =>
@@ -64,9 +60,10 @@ export default function Home() {
   const loadingCount = roundTrips.filter((rt) =>
     rt.trip_legs.some((l) => l.status === 'loaded')
   ).length;
-  const unbookedReturns = roundTrips.filter((rt) =>
-    rt.trip_legs.some((l) => l.direction === 'return' && l.status === 'pending')
-  ).length;
+  const pendingLegsCount = roundTrips.reduce(
+    (sum, rt) => sum + rt.trip_legs.filter((l) => l.status === 'pending').length,
+    0
+  );
 
   return (
     <div className="page">
@@ -89,8 +86,8 @@ export default function Home() {
             <p className="stat-value">{trucks.length} trucks</p>
           </div>
           <div className="stat-card">
-            <p className="stat-label">Returns unbooked</p>
-            <p className="stat-value stat-danger">{unbookedReturns}</p>
+            <p className="stat-label">Legs pending</p>
+            <p className="stat-value stat-danger">{pendingLegsCount}</p>
           </div>
         </div>
 
@@ -106,41 +103,38 @@ export default function Home() {
         </button>
 
         {roundTrips.length === 0 && (
-          <p className="empty-state">No active round trips yet. Add one in Supabase → Table Editor → round_trips to see it here.</p>
+          <p className="empty-state">No active round trips yet.</p>
         )}
 
         <div className="trip-list">
           {roundTrips.map((rt) => {
-            const outbound = rt.trip_legs.find((l) => l.direction === 'outbound');
-            const ret = rt.trip_legs.find((l) => l.direction === 'return');
+            const sortedLegs = [...rt.trip_legs].sort((a, b) => (a.sequence || 0) - (b.sequence || 0));
+            const pendingCount = sortedLegs.filter((l) => l.status === 'pending').length;
 
             return (
-              <div className="trip-card" key={rt.id} onClick={() => router.push(`/trips/${rt.id}`)} style={{ cursor: 'pointer' }}>
+              <div
+                className="trip-card"
+                key={rt.id}
+                onClick={() => router.push(`/trips/${rt.id}`)}
+                style={{ cursor: 'pointer' }}
+              >
                 <div className="trip-card-header">
                   <p className="trip-card-title">
                     {rt.truck?.plate_no || 'Unassigned truck'} · {rt.driver?.full_name || 'Unassigned driver'}
                   </p>
-                  <span className="pill pill-accent">{outbound?.status || 'planned'}</span>
+                  {pendingCount > 0 && (
+                    <span className="pill pill-danger">{pendingCount} pending</span>
+                  )}
                 </div>
 
-                {outbound && (
-                  <p className="trip-route">→ {outbound.origin} → {outbound.destination}</p>
-                )}
-
-                {ret && (
-                  <div className="return-row">
-                    <span className="trip-route">← Return</span>
-                    {ret.status === 'pending' ? (
-                      <button className="pill pill-danger pill-button" onClick={() => router.push(`/trips/${rt.id}`)}>
-                        pending — book now
-                      </button>
-                    ) : (
-                      <span className={`pill ${ret.is_empty ? 'pill-danger' : 'pill-success'}`}>
-                        {ret.is_empty ? 'departed empty' : ret.status}
-                      </span>
-                    )}
+                {sortedLegs.map((leg) => (
+                  <div key={leg.id} className="return-row">
+                    <span className="trip-route">{leg.direction}: {leg.origin} → {leg.destination}</span>
+                    <span className={`pill ${leg.status === 'pending' ? 'pill-danger' : leg.is_empty ? 'pill-danger' : 'pill-accent'}`}>
+                      {leg.status === 'pending' ? 'pending' : leg.is_empty ? 'empty' : leg.status}
+                    </span>
                   </div>
-                )}
+                ))}
               </div>
             );
           })}

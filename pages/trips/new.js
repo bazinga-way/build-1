@@ -14,6 +14,7 @@ export default function NewRoundTrip() {
   const [truckId, setTruckId] = useState('');
   const [trailerId, setTrailerId] = useState('');
   const [driverId, setDriverId] = useState('');
+  const [legType, setLegType] = useState('Outbound');
   const [customerId, setCustomerId] = useState('');
   const [newCustomerName, setNewCustomerName] = useState('');
   const [origin, setOrigin] = useState('Dar es Salaam Port');
@@ -31,7 +32,6 @@ export default function NewRoundTrip() {
         return;
       }
 
-      // Trucks/drivers already tied up in another active round trip shouldn't be offered again
       const { data: activeTrips } = await supabase
         .from('round_trips')
         .select('truck_id, driver_id')
@@ -85,15 +85,9 @@ export default function NewRoundTrip() {
       finalCustomerId = newCustomer.id;
     }
 
-    // Create the round trip — the database trigger auto-creates the pending return leg
     const { data: roundTrip, error: tripError } = await supabase
       .from('round_trips')
-      .insert({
-        truck_id: truckId,
-        trailer_id: trailerId || null,
-        driver_id: driverId,
-        status: 'active',
-      })
+      .insert({ truck_id: truckId, trailer_id: trailerId || null, driver_id: driverId, status: 'active' })
       .select()
       .single();
 
@@ -103,10 +97,10 @@ export default function NewRoundTrip() {
       return;
     }
 
-    // Now add the outbound leg
     const { error: legError } = await supabase.from('trip_legs').insert({
       round_trip_id: roundTrip.id,
-      direction: 'outbound',
+      direction: legType,
+      sequence: 1,
       customer_id: finalCustomerId,
       origin,
       destination,
@@ -114,13 +108,14 @@ export default function NewRoundTrip() {
       weight_tons: weightTons ? Number(weightTons) : null,
       bl_number: blNumber || null,
       status: 'planned',
+      is_empty: false,
       planned_departure: plannedDeparture || null,
     });
 
     setSaving(false);
 
     if (legError) {
-      alert('Round trip created, but the outbound leg failed to save: ' + legError.message);
+      alert('Round trip created, but the first leg failed to save: ' + legError.message);
       return;
     }
 
@@ -143,51 +138,48 @@ export default function NewRoundTrip() {
           <label htmlFor="truck">Truck</label>
           <select id="truck" value={truckId} onChange={(e) => setTruckId(e.target.value)}>
             <option value="">Select available truck…</option>
-            {trucks.map((t) => (
-              <option key={t.id} value={t.id}>{t.plate_no}</option>
-            ))}
+            {trucks.map((t) => (<option key={t.id} value={t.id}>{t.plate_no}</option>))}
           </select>
-          {trucks.length === 0 && (
-            <p style={{ fontSize: 12, color: '#b25e00', marginTop: 4 }}>No available trucks — all active trucks are on a trip, or none exist yet.</p>
-          )}
 
           <label htmlFor="trailer">Trailer (optional)</label>
           <select id="trailer" value={trailerId} onChange={(e) => setTrailerId(e.target.value)}>
             <option value="">None selected</option>
-            {trailers.map((t) => (
-              <option key={t.id} value={t.id}>{t.plate_no}</option>
-            ))}
+            {trailers.map((t) => (<option key={t.id} value={t.id}>{t.plate_no}</option>))}
           </select>
 
           <label htmlFor="driver">Driver</label>
           <select id="driver" value={driverId} onChange={(e) => setDriverId(e.target.value)}>
             <option value="">Select available driver…</option>
-            {drivers.map((d) => (
-              <option key={d.id} value={d.id}>{d.full_name}</option>
-            ))}
+            {drivers.map((d) => (<option key={d.id} value={d.id}>{d.full_name}</option>))}
           </select>
-          {drivers.length === 0 && (
-            <p style={{ fontSize: 12, color: '#b25e00', marginTop: 4 }}>No available drivers — all active drivers are on a trip, or none exist yet.</p>
+
+          <p style={{ fontSize: 13, color: '#555', margin: '16px 0 8px' }}>First leg of this round trip</p>
+
+          <label htmlFor="legType">Leg type / label</label>
+          <select id="legType" value={legType} onChange={(e) => setLegType(e.target.value)}>
+            <option value="Outbound">Outbound</option>
+            <option value="Return">Return</option>
+            <option value="Repositioning">Repositioning</option>
+            <option value="Other">Other</option>
+          </select>
+          {legType === 'Other' && (
+            <input
+              type="text"
+              placeholder="Describe this leg"
+              onChange={(e) => setLegType(e.target.value)}
+              style={{ marginTop: 6 }}
+            />
           )}
 
           <label htmlFor="customer">Customer</label>
           <select id="customer" value={customerId} onChange={(e) => setCustomerId(e.target.value)}>
             <option value="">Select customer…</option>
-            {customers.map((c) => (
-              <option key={c.id} value={c.id}>{c.name}</option>
-            ))}
+            {customers.map((c) => (<option key={c.id} value={c.id}>{c.name}</option>))}
           </select>
-
           {!customerId && (
             <>
               <label htmlFor="newCustomer">Or add new customer</label>
-              <input
-                id="newCustomer"
-                type="text"
-                placeholder="Customer name"
-                value={newCustomerName}
-                onChange={(e) => setNewCustomerName(e.target.value)}
-              />
+              <input id="newCustomer" type="text" placeholder="Customer name" value={newCustomerName} onChange={(e) => setNewCustomerName(e.target.value)} />
             </>
           )}
 
@@ -203,13 +195,7 @@ export default function NewRoundTrip() {
           </div>
 
           <label htmlFor="cargo">Cargo description</label>
-          <input
-            id="cargo"
-            type="text"
-            placeholder="e.g. general cargo, 30 tonnes"
-            value={cargoDescription}
-            onChange={(e) => setCargoDescription(e.target.value)}
-          />
+          <input id="cargo" type="text" placeholder="e.g. general cargo, 30 tonnes" value={cargoDescription} onChange={(e) => setCargoDescription(e.target.value)} />
 
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
             <div>
@@ -223,12 +209,11 @@ export default function NewRoundTrip() {
           </div>
 
           <label htmlFor="departure">Planned departure</label>
-          <input
-            id="departure"
-            type="datetime-local"
-            value={plannedDeparture}
-            onChange={(e) => setPlannedDeparture(e.target.value)}
-          />
+          <input id="departure" type="datetime-local" value={plannedDeparture} onChange={(e) => setPlannedDeparture(e.target.value)} />
+
+          <p style={{ fontSize: 12, color: '#777', marginTop: 12 }}>
+            You'll be able to add more legs (return, repositioning, another delivery, etc.) to this round trip afterwards — as many as the actual journey needs.
+          </p>
 
           <button type="submit" disabled={saving} style={{ marginTop: 16 }}>
             {saving ? 'Creating…' : 'Create round trip'}
