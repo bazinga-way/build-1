@@ -100,6 +100,47 @@ export default function AssetMaintenanceFinance({ assetType, assetId }) {
     load();
   }
 
+  async function handleGenerateSchedule() {
+    if (schedule.length > 0) {
+      const confirmed = confirm('This will replace the existing repayment schedule. Continue?');
+      if (!confirmed) return;
+    }
+
+    const principal = Number(agreement.principal);
+    const termMonths = Number(agreement.term_months);
+    const annualRate = agreement.interest_rate ? Number(agreement.interest_rate) : 0;
+    const monthlyRate = annualRate / 100 / 12;
+
+    let monthlyPayment;
+    if (monthlyRate > 0) {
+      monthlyPayment = (principal * monthlyRate) / (1 - Math.pow(1 + monthlyRate, -termMonths));
+    } else {
+      monthlyPayment = principal / termMonths;
+    }
+    monthlyPayment = Math.round(monthlyPayment * 100) / 100;
+
+    const start = new Date(agreement.start_date);
+    const rows = [];
+    for (let i = 1; i <= termMonths; i++) {
+      const dueDate = new Date(start);
+      dueDate.setMonth(dueDate.getMonth() + i);
+      rows.push({
+        finance_agreement_id: agreement.id,
+        due_date: dueDate.toISOString().slice(0, 10),
+        amount_due: monthlyPayment,
+        status: 'upcoming',
+      });
+    }
+
+    if (schedule.length > 0) {
+      await supabase.from('loan_repayment_schedule').delete().eq('finance_agreement_id', agreement.id);
+    }
+
+    const { error } = await supabase.from('loan_repayment_schedule').insert(rows);
+    if (error) { alert('Could not generate schedule: ' + error.message); return; }
+    load();
+  }
+
   return (
     <div>
       <p style={{ fontSize: 13, color: '#555', margin: '4px 0 8px', fontWeight: 600 }}>Maintenance</p>
@@ -163,7 +204,7 @@ export default function AssetMaintenanceFinance({ assetType, assetId }) {
             <input type="number" placeholder="Term (months)" value={termMonths} onChange={(e) => setTermMonths(e.target.value)} style={{ width: 130 }} />
           </div>
           <p style={{ fontSize: 12, color: '#777', marginBottom: 8 }}>
-            After saving, add repayment due dates directly in Supabase → loan_repayment_schedule (one row per due date) — a form for that is next on the build list.
+            After saving, you'll be able to auto-generate the monthly repayment schedule from these terms.
           </p>
           <div style={{ display: 'flex', gap: 8 }}>
             <button type="submit">Save</button>
@@ -177,7 +218,16 @@ export default function AssetMaintenanceFinance({ assetType, assetId }) {
           <p style={{ fontSize: 13, marginBottom: 8 }}>
             {agreement.lender_name} · principal {agreement.principal} · {agreement.term_months} months from {agreement.start_date}
           </p>
-          {schedule.length === 0 && <p style={{ fontSize: 13, color: '#999' }}>No repayment schedule entered yet — add rows in Supabase → loan_repayment_schedule.</p>}
+          {schedule.length === 0 ? (
+            <button onClick={handleGenerateSchedule} style={{ marginBottom: 8 }}>Generate monthly repayment schedule</button>
+          ) : (
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+              <span style={{ fontSize: 12, color: '#666' }}>
+                {schedule.filter((s) => s.status === 'paid').length} of {schedule.length} paid
+              </span>
+              <button onClick={handleGenerateSchedule} style={{ fontSize: 12, padding: '4px 10px' }}>Regenerate</button>
+            </div>
+          )}
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
             {schedule.map((s) => (
               <div key={s.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 13, background: '#f7f7f8', padding: '8px 10px', borderRadius: 6 }}>
