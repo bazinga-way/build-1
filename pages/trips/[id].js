@@ -38,6 +38,12 @@ export default function TripDetail() {
   const [expenseAmount, setExpenseAmount] = useState('');
   const [expenseNotes, setExpenseNotes] = useState('');
 
+  const [statusHistory, setStatusHistory] = useState({}); // { legId: [history, ...] }
+  const [expandedHistoryLegId, setExpandedHistoryLegId] = useState(null);
+  const [userId, setUserId] = useState(null);
+
+  const STATUS_OPTIONS = ['planned', 'loaded', 'departed', 'at_border', 'customs_cleared', 'in_transit', 'delivered', 'pod_received', 'closed'];
+
   useEffect(() => {
     if (!id) return;
     load();
@@ -50,6 +56,7 @@ export default function TripDetail() {
       router.push('/login');
       return;
     }
+    setUserId(session.user.id);
 
     const { data: tripData } = await supabase
       .from('round_trips')
@@ -77,6 +84,18 @@ export default function TripDetail() {
         grouped[exp.trip_leg_id].push(exp);
       });
       setExpenses(grouped);
+
+      const { data: historyData } = await supabase
+        .from('trip_leg_status_history')
+        .select('*')
+        .in('trip_leg_id', legData.map((l) => l.id))
+        .order('changed_at', { ascending: false });
+      const historyGrouped = {};
+      (historyData || []).forEach((h) => {
+        if (!historyGrouped[h.trip_leg_id]) historyGrouped[h.trip_leg_id] = [];
+        historyGrouped[h.trip_leg_id].push(h);
+      });
+      setStatusHistory(historyGrouped);
     }
 
     const { data: agentData } = await supabase.from('agents').select('id, name');
@@ -90,6 +109,20 @@ export default function TripDetail() {
 
   if (loading) return <p className="center-text">Loading…</p>;
   if (!roundTrip) return <p className="center-text">Round trip not found.</p>;
+
+  async function updateLegStatus(leg, newStatus) {
+    const { error } = await supabase.from('trip_legs').update({ status: newStatus }).eq('id', leg.id);
+    if (error) {
+      alert('Could not update status: ' + error.message);
+      return;
+    }
+    await supabase.from('trip_leg_status_history').insert({
+      trip_leg_id: leg.id,
+      status: newStatus,
+      changed_by: userId,
+    });
+    load();
+  }
 
   async function handleAddExpense(legId) {
     if (!expenseAmount) {
@@ -223,6 +256,31 @@ export default function TripDetail() {
               {leg.customer?.name && <p className="trip-route">Customer: {leg.customer.name}</p>}
               {leg.agent?.name && <p className="trip-route">Agent: {leg.agent.name}</p>}
               {leg.cargo_description && <p className="trip-route">Cargo: {leg.cargo_description}</p>}
+
+              {leg.status !== 'pending' && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 8, flexWrap: 'wrap' }}>
+                  <label style={{ fontSize: 12, color: '#555' }}>Status:</label>
+                  <select value={leg.status} onChange={(e) => updateLegStatus(leg, e.target.value)}>
+                    {STATUS_OPTIONS.map((s) => (<option key={s} value={s}>{s}</option>))}
+                  </select>
+                  {(statusHistory[leg.id] || []).length > 0 && (
+                    <button
+                      onClick={() => setExpandedHistoryLegId(expandedHistoryLegId === leg.id ? null : leg.id)}
+                      style={{ fontSize: 11, padding: '2px 8px' }}
+                    >
+                      History
+                    </button>
+                  )}
+                </div>
+              )}
+
+              {expandedHistoryLegId === leg.id && (
+                <div style={{ marginTop: 6, fontSize: 12, color: '#777' }}>
+                  {statusHistory[leg.id].map((h) => (
+                    <div key={h.id}>{h.status} — {new Date(h.changed_at).toLocaleString()}</div>
+                  ))}
+                </div>
+              )}
 
               <div style={{ marginTop: 8, borderTop: '1px solid #f2f2f2', paddingTop: 8 }}>
                 {(expenses[leg.id] || []).length > 0 && (
