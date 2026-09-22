@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/router';
 import { supabase } from '../../lib/supabaseClient';
 import DocumentUploader from '../../components/DocumentUploader';
+import AssetMaintenanceFinance from '../../components/AssetMaintenanceFinance';
 
 export default function TrucksPage() {
   const router = useRouter();
@@ -56,6 +57,9 @@ export default function TrucksPage() {
               {expandedId === t.id && (
                 <div style={{ marginTop: 12 }}>
                   <DocumentUploader recordTable="trucks" recordId={t.id} />
+                  <div style={{ marginTop: 16, borderTop: '1px solid #eee', paddingTop: 12 }}>
+                    <AssetMaintenanceFinance assetType="truck" assetId={t.id} />
+                  </div>
                 </div>
               )}
             </div>
