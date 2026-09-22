@@ -73,6 +73,7 @@ export default function Home() {
           <button onClick={() => router.push('/trucks')}>Trucks</button>
           <button onClick={() => router.push('/trailers')}>Trailers</button>
           <button onClick={() => router.push('/drivers')}>Drivers</button>
+          <button onClick={() => router.push('/customers')}>Customers</button>
           <button onClick={() => router.push('/compliance')}>Compliance</button>
           <button onClick={() => router.push('/invoices')}>Invoices</button>
           <span>{profile?.full_name || 'Signed in'} · {profile?.role}</span>
