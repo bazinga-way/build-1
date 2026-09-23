@@ -5,6 +5,7 @@ export default function AssetMaintenanceFinance({ assetType, assetId }) {
   const [records, setRecords] = useState([]);
   const [agreement, setAgreement] = useState(null);
   const [schedule, setSchedule] = useState([]);
+  const [isOwner, setIsOwner] = useState(false);
   const [showAddMaintenance, setShowAddMaintenance] = useState(false);
   const [showAddAgreement, setShowAddAgreement] = useState(false);
 
@@ -27,6 +28,12 @@ export default function AssetMaintenanceFinance({ assetType, assetId }) {
   }, [assetId]);
 
   async function load() {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (session) {
+      const { data: profile } = await supabase.from('profiles').select('role').eq('id', session.user.id).single();
+      setIsOwner(profile?.role === 'owner');
+    }
+
     const { data: recordData } = await supabase
       .from('maintenance_records')
       .select('*')
@@ -184,63 +191,69 @@ export default function AssetMaintenanceFinance({ assetType, assetId }) {
         </form>
       )}
 
-      <p style={{ fontSize: 13, color: '#555', margin: '4px 0 8px', fontWeight: 600 }}>Finance / loan</p>
-      {!agreement && !showAddAgreement && (
+      {isOwner ? (
         <>
-          <p style={{ fontSize: 13, color: '#999', marginBottom: 8 }}>No finance agreement recorded.</p>
-          <button onClick={() => setShowAddAgreement(true)}>+ Add finance agreement</button>
-        </>
-      )}
+          <p style={{ fontSize: 13, color: '#555', margin: '4px 0 8px', fontWeight: 600 }}>Finance / loan</p>
+          {!agreement && !showAddAgreement && (
+            <>
+              <p style={{ fontSize: 13, color: '#999', marginBottom: 8 }}>No finance agreement recorded.</p>
+              <button onClick={() => setShowAddAgreement(true)}>+ Add finance agreement</button>
+            </>
+          )}
 
-      {!agreement && showAddAgreement && (
-        <form onSubmit={handleAddAgreement}>
-          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 8 }}>
-            <input type="text" placeholder="Lender name" value={lenderName} onChange={(e) => setLenderName(e.target.value)} style={{ flex: 1, minWidth: 140 }} />
-            <input type="number" placeholder="Principal" value={principal} onChange={(e) => setPrincipal(e.target.value)} style={{ width: 120 }} />
-            <input type="number" placeholder="Interest %" value={interestRate} onChange={(e) => setInterestRate(e.target.value)} style={{ width: 100 }} />
-          </div>
-          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 8 }}>
-            <input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} />
-            <input type="number" placeholder="Term (months)" value={termMonths} onChange={(e) => setTermMonths(e.target.value)} style={{ width: 130 }} />
-          </div>
-          <p style={{ fontSize: 12, color: '#777', marginBottom: 8 }}>
-            After saving, you'll be able to auto-generate the monthly repayment schedule from these terms.
-          </p>
-          <div style={{ display: 'flex', gap: 8 }}>
-            <button type="submit">Save</button>
-            <button type="button" onClick={() => setShowAddAgreement(false)} style={{ background: 'white' }}>Cancel</button>
-          </div>
-        </form>
-      )}
+          {!agreement && showAddAgreement && (
+            <form onSubmit={handleAddAgreement}>
+              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 8 }}>
+                <input type="text" placeholder="Lender name" value={lenderName} onChange={(e) => setLenderName(e.target.value)} style={{ flex: 1, minWidth: 140 }} />
+                <input type="number" placeholder="Principal" value={principal} onChange={(e) => setPrincipal(e.target.value)} style={{ width: 120 }} />
+                <input type="number" placeholder="Interest %" value={interestRate} onChange={(e) => setInterestRate(e.target.value)} style={{ width: 100 }} />
+              </div>
+              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 8 }}>
+                <input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} />
+                <input type="number" placeholder="Term (months)" value={termMonths} onChange={(e) => setTermMonths(e.target.value)} style={{ width: 130 }} />
+              </div>
+              <p style={{ fontSize: 12, color: '#777', marginBottom: 8 }}>
+                After saving, you'll be able to auto-generate the monthly repayment schedule from these terms.
+              </p>
+              <div style={{ display: 'flex', gap: 8 }}>
+                <button type="submit">Save</button>
+                <button type="button" onClick={() => setShowAddAgreement(false)} style={{ background: 'white' }}>Cancel</button>
+              </div>
+            </form>
+          )}
 
-      {agreement && (
-        <div>
-          <p style={{ fontSize: 13, marginBottom: 8 }}>
-            {agreement.lender_name} · principal {agreement.principal} · {agreement.term_months} months from {agreement.start_date}
-          </p>
-          {schedule.length === 0 ? (
-            <button onClick={handleGenerateSchedule} style={{ marginBottom: 8 }}>Generate monthly repayment schedule</button>
-          ) : (
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-              <span style={{ fontSize: 12, color: '#666' }}>
-                {schedule.filter((s) => s.status === 'paid').length} of {schedule.length} paid
-              </span>
-              <button onClick={handleGenerateSchedule} style={{ fontSize: 12, padding: '4px 10px' }}>Regenerate</button>
+          {agreement && (
+            <div>
+              <p style={{ fontSize: 13, marginBottom: 8 }}>
+                {agreement.lender_name} · principal {agreement.principal} · {agreement.term_months} months from {agreement.start_date}
+              </p>
+              {schedule.length === 0 ? (
+                <button onClick={handleGenerateSchedule} style={{ marginBottom: 8 }}>Generate monthly repayment schedule</button>
+              ) : (
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                  <span style={{ fontSize: 12, color: '#666' }}>
+                    {schedule.filter((s) => s.status === 'paid').length} of {schedule.length} paid
+                  </span>
+                  <button onClick={handleGenerateSchedule} style={{ fontSize: 12, padding: '4px 10px' }}>Regenerate</button>
+                </div>
+              )}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                {schedule.map((s) => (
+                  <div key={s.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 13, background: '#f7f7f8', padding: '8px 10px', borderRadius: 6 }}>
+                    <span>{s.due_date} · {s.amount_due}</span>
+                    {s.status === 'paid' ? (
+                      <span className="pill pill-success">paid</span>
+                    ) : (
+                      <button onClick={() => markPaid(s)} className="pill pill-warning pill-button">mark paid</button>
+                    )}
+                  </div>
+                ))}
+              </div>
             </div>
           )}
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-            {schedule.map((s) => (
-              <div key={s.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 13, background: '#f7f7f8', padding: '8px 10px', borderRadius: 6 }}>
-                <span>{s.due_date} · {s.amount_due}</span>
-                {s.status === 'paid' ? (
-                  <span className="pill pill-success">paid</span>
-                ) : (
-                  <button onClick={() => markPaid(s)} className="pill pill-warning pill-button">mark paid</button>
-                )}
-              </div>
-            ))}
-          </div>
-        </div>
+        </>
+      ) : (
+        <p style={{ fontSize: 12, color: '#999' }}>Finance details are visible to the owner only.</p>
       )}
     </div>
   );
