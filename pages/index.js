@@ -75,7 +75,13 @@ export default function Home() {
           <button onClick={() => router.push('/drivers')}>Drivers</button>
           <button onClick={() => router.push('/customers')}>Customers</button>
           <button onClick={() => router.push('/compliance')}>Compliance</button>
-          <button onClick={() => router.push('/invoices')}>Invoices</button>
+          {profile?.role === 'owner' && (
+            <>
+              <button onClick={() => router.push('/invoices')}>Invoices</button>
+              <button onClick={() => router.push('/reports')}>Reports</button>
+              <button onClick={() => router.push('/team')}>Team</button>
+            </>
+          )}
           <span>{profile?.full_name || 'Signed in'} · {profile?.role}</span>
           <button onClick={handleSignOut}>Sign out</button>
         </div>
