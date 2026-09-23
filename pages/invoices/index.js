@@ -5,6 +5,7 @@ import { supabase } from '../../lib/supabaseClient';
 export default function InvoicesPage() {
   const router = useRouter();
   const [invoices, setInvoices] = useState([]);
+  const [myRole, setMyRole] = useState(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -12,6 +13,14 @@ export default function InvoicesPage() {
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) {
         router.push('/login');
+        return;
+      }
+
+      const { data: profile } = await supabase.from('profiles').select('role').eq('id', session.user.id).single();
+      setMyRole(profile?.role);
+
+      if (profile?.role !== 'owner') {
+        setLoading(false);
         return;
       }
 
@@ -32,6 +41,20 @@ export default function InvoicesPage() {
   }, [router]);
 
   if (loading) return <p className="center-text">Loading…</p>;
+
+  if (myRole !== 'owner') {
+    return (
+      <div className="page">
+        <header className="topbar">
+          <h1>TransitOps</h1>
+          <button onClick={() => router.push('/')}>← Back</button>
+        </header>
+        <main className="content">
+          <p className="empty-state">Invoices are only visible to the owner.</p>
+        </main>
+      </div>
+    );
+  }
 
   return (
     <div className="page">

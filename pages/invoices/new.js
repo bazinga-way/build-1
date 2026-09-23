@@ -25,6 +25,13 @@ export default function NewInvoice() {
         return;
       }
 
+      const { data: profile } = await supabase.from('profiles').select('role').eq('id', session.user.id).single();
+      if (profile?.role !== 'owner') {
+        alert('Invoices are only available to the owner.');
+        router.push('/');
+        return;
+      }
+
       const { data: customerData } = await supabase.from('customers').select('id, name').order('name');
       setCustomers(customerData || []);
 
