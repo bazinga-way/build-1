@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/router';
 import { supabase } from '../lib/supabaseClient';
+import NavDropdown from '../components/NavDropdown';
 
 export default function Home() {
   const router = useRouter();
@@ -102,19 +103,34 @@ export default function Home() {
       <header className="topbar">
         <h1>TransitOps</h1>
         <div className="topbar-right">
-          <button onClick={() => router.push('/trucks')}>Trucks</button>
-          <button onClick={() => router.push('/trailers')}>Trailers</button>
-          <button onClick={() => router.push('/drivers')}>Drivers</button>
-          <button onClick={() => router.push('/customers')}>Customers</button>
-          <button onClick={() => router.push('/compliance')}>Compliance</button>
-          <button onClick={() => router.push('/inventory')}>Inventory</button>
-          <button onClick={() => router.push('/incidents')}>Incidents</button>
+          <NavDropdown
+            label="Fleet"
+            items={[
+              { label: 'Trucks', onClick: () => router.push('/trucks') },
+              { label: 'Trailers', onClick: () => router.push('/trailers') },
+              { label: 'Drivers', onClick: () => router.push('/drivers') },
+              { label: 'Customers', onClick: () => router.push('/customers') },
+            ]}
+          />
+          <NavDropdown
+            label="Operations"
+            items={[
+              { label: 'Compliance', onClick: () => router.push('/compliance') },
+              { label: 'Inventory', onClick: () => router.push('/inventory') },
+              { label: 'Incidents', onClick: () => router.push('/incidents') },
+            ]}
+          />
           {profile?.role === 'owner' && (
-            <>
-              <button onClick={() => router.push('/invoices')}>Invoices</button>
-              <button onClick={() => router.push('/reports')}>Reports</button>
-              <button onClick={() => router.push('/team')}>Team</button>
-            </>
+            <NavDropdown
+              label="Finance"
+              items={[
+                { label: 'Invoices', onClick: () => router.push('/invoices') },
+                { label: 'Accounting', onClick: () => router.push('/accounting') },
+                { label: 'Payroll', onClick: () => router.push('/payroll') },
+                { label: 'Reports', onClick: () => router.push('/reports') },
+                { label: 'Team', onClick: () => router.push('/team') },
+              ]}
+            />
           )}
           <span>{profile?.full_name || 'Signed in'} · {profile?.role}</span>
           <button onClick={handleSignOut}>Sign out</button>
