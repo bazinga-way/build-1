@@ -7,6 +7,7 @@ export default function Home() {
   const [profile, setProfile] = useState(null);
   const [trucks, setTrucks] = useState([]);
   const [roundTrips, setRoundTrips] = useState([]);
+  const [alerts, setAlerts] = useState({ compliance: 0, incidents: 0, lowStock: 0, loans: 0 });
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -38,6 +39,37 @@ export default function Home() {
         `)
         .eq('status', 'active');
       setRoundTrips(tripData || []);
+
+      // Alerts center: pull together everything that needs attention
+      const thirtyDaysOut = new Date();
+      thirtyDaysOut.setDate(thirtyDaysOut.getDate() + 30);
+
+      const { data: docs } = await supabase
+        .from('documents')
+        .select('expiry_date')
+        .not('expiry_date', 'is', null)
+        .lte('expiry_date', thirtyDaysOut.toISOString().slice(0, 10));
+      const complianceCount = (docs || []).length;
+
+      const { count: incidentCount } = await supabase
+        .from('incidents')
+        .select('id', { count: 'exact', head: true })
+        .eq('status', 'open');
+
+      const { data: items } = await supabase.from('inventory_items').select('current_qty, reorder_level');
+      const lowStockCount = (items || []).filter((i) => i.current_qty <= i.reorder_level).length;
+
+      let loanCount = 0;
+      if (profileData?.role === 'owner') {
+        const { count } = await supabase
+          .from('loan_repayment_schedule')
+          .select('id', { count: 'exact', head: true })
+          .eq('status', 'upcoming')
+          .lte('due_date', thirtyDaysOut.toISOString().slice(0, 10));
+        loanCount = count || 0;
+      }
+
+      setAlerts({ compliance: complianceCount, incidents: incidentCount || 0, lowStock: lowStockCount, loans: loanCount });
 
       setLoading(false);
     }
@@ -75,6 +107,8 @@ export default function Home() {
           <button onClick={() => router.push('/drivers')}>Drivers</button>
           <button onClick={() => router.push('/customers')}>Customers</button>
           <button onClick={() => router.push('/compliance')}>Compliance</button>
+          <button onClick={() => router.push('/inventory')}>Inventory</button>
+          <button onClick={() => router.push('/incidents')}>Incidents</button>
           {profile?.role === 'owner' && (
             <>
               <button onClick={() => router.push('/invoices')}>Invoices</button>
@@ -88,6 +122,38 @@ export default function Home() {
       </header>
 
       <main className="content">
+        {(alerts.compliance > 0 || alerts.incidents > 0 || alerts.lowStock > 0 || alerts.loans > 0) && (
+          <div className="trip-card" style={{ marginBottom: 16, borderColor: '#f5c6c0' }}>
+            <p className="trip-card-title" style={{ marginBottom: 8 }}>Needs attention</p>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+              {alerts.compliance > 0 && (
+                <div className="return-row" style={{ cursor: 'pointer' }} onClick={() => router.push('/compliance')}>
+                  <span className="trip-route">Documents expiring/expired</span>
+                  <span className="pill pill-danger">{alerts.compliance}</span>
+                </div>
+              )}
+              {alerts.loans > 0 && (
+                <div className="return-row" style={{ cursor: 'pointer' }} onClick={() => router.push('/reports')}>
+                  <span className="trip-route">Loan payments due in 30 days</span>
+                  <span className="pill pill-danger">{alerts.loans}</span>
+                </div>
+              )}
+              {alerts.lowStock > 0 && (
+                <div className="return-row" style={{ cursor: 'pointer' }} onClick={() => router.push('/inventory')}>
+                  <span className="trip-route">Low stock items</span>
+                  <span className="pill pill-warning">{alerts.lowStock}</span>
+                </div>
+              )}
+              {alerts.incidents > 0 && (
+                <div className="return-row" style={{ cursor: 'pointer' }} onClick={() => router.push('/incidents')}>
+                  <span className="trip-route">Open incidents</span>
+                  <span className="pill pill-warning">{alerts.incidents}</span>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
         <div className="stat-grid">
           <div className="stat-card">
             <p className="stat-label">Fleet</p>
