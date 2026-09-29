@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/router';
 import { supabase } from '../../lib/supabaseClient';
+import { exportToCsv } from '../../lib/csvExport';
 
 export default function InvoicesPage() {
   const router = useRouter();
@@ -40,6 +41,18 @@ export default function InvoicesPage() {
     load();
   }, [router]);
 
+  function handleExport() {
+    exportToCsv('invoices.csv', invoices.map((inv) => ({
+      invoice_no: inv.invoice_no,
+      customer: inv.customer?.name || '',
+      status: inv.status,
+      currency: inv.currency,
+      total: inv.invoice_lines.reduce((s, l) => s + Number(l.amount), 0).toFixed(2),
+      issue_date: inv.issue_date,
+      due_date: inv.due_date || '',
+    })));
+  }
+
   if (loading) return <p className="center-text">Loading…</p>;
 
   if (myRole !== 'owner') {
@@ -66,7 +79,10 @@ export default function InvoicesPage() {
       <main className="content">
         <div className="trip-card-header" style={{ marginBottom: 16 }}>
           <h2 className="section-title" style={{ margin: 0 }}>Invoices</h2>
-          <button onClick={() => router.push('/invoices/new')}>+ New invoice</button>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button onClick={handleExport} style={{ fontSize: 12, padding: '4px 10px' }}>Export CSV</button>
+            <button onClick={() => router.push('/invoices/new')}>+ New invoice</button>
+          </div>
         </div>
 
         {invoices.length === 0 && (
