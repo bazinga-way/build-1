@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/router';
 import { supabase } from '../../lib/supabaseClient';
+import { exportToCsv } from '../../lib/csvExport';
 
 export default function ReportsPage() {
   const router = useRouter();
@@ -8,6 +9,7 @@ export default function ReportsPage() {
   const [loading, setLoading] = useState(true);
   const [legProfitability, setLegProfitability] = useState([]);
   const [cashSummary, setCashSummary] = useState(null);
+  const [reportingCurrency, setReportingCurrency] = useState('USD');
 
   useEffect(() => {
     async function load() {
@@ -25,28 +27,46 @@ export default function ReportsPage() {
         return;
       }
 
-      // Trip profitability: revenue (invoice lines linked to a leg) minus expenses (per leg)
+      // Latest exchange rate per currency, converting everything to USD.
+      // Convention: exchange_rates.rate = how many USD one unit of from_currency is worth.
+      const { data: rates } = await supabase
+        .from('exchange_rates')
+        .select('from_currency, rate, rate_date')
+        .eq('to_currency', 'USD')
+        .order('rate_date', { ascending: false });
+      const rateMap = {};
+      (rates || []).forEach((r) => {
+        if (!(r.from_currency in rateMap)) rateMap[r.from_currency] = Number(r.rate);
+      });
+      const toUsd = (amount, currency) => {
+        if (currency === 'USD') return amount;
+        if (rateMap[currency]) return amount * rateMap[currency];
+        return amount; // no rate on file — best effort, flagged in the UI note below
+      };
+
       const { data: legs } = await supabase
         .from('trip_legs')
         .select('id, direction, origin, destination, round_trip:round_trips(truck:trucks(plate_no))')
         .order('created_at', { ascending: false })
         .limit(50);
 
-      const { data: expensesAll } = await supabase.from('trip_leg_expenses').select('trip_leg_id, amount');
+      const { data: expensesAll } = await supabase.from('trip_leg_expenses').select('trip_leg_id, amount, currency');
       const { data: invoicesAll } = await supabase
         .from('invoices')
-        .select('trip_leg_id, invoice_lines(amount)')
+        .select('trip_leg_id, currency, invoice_lines(amount)')
         .not('trip_leg_id', 'is', null);
 
       const expenseByLeg = {};
       (expensesAll || []).forEach((e) => {
-        expenseByLeg[e.trip_leg_id] = (expenseByLeg[e.trip_leg_id] || 0) + Number(e.amount);
+        const usd = toUsd(Number(e.amount), e.currency);
+        expenseByLeg[e.trip_leg_id] = (expenseByLeg[e.trip_leg_id] || 0) + usd;
       });
 
       const revenueByLeg = {};
       (invoicesAll || []).forEach((inv) => {
         const total = inv.invoice_lines.reduce((s, l) => s + Number(l.amount), 0);
-        revenueByLeg[inv.trip_leg_id] = (revenueByLeg[inv.trip_leg_id] || 0) + total;
+        const usd = toUsd(total, inv.currency);
+        revenueByLeg[inv.trip_leg_id] = (revenueByLeg[inv.trip_leg_id] || 0) + usd;
       });
 
       const profitRows = (legs || [])
@@ -64,17 +84,17 @@ export default function ReportsPage() {
         });
       setLegProfitability(profitRows);
 
-      // Cash summary
-      const { data: allInvoices } = await supabase.from('invoices').select('status, invoice_lines(amount)');
+      const { data: allInvoices } = await supabase.from('invoices').select('status, currency, invoice_lines(amount)');
       let totalInvoiced = 0, totalPaid = 0, totalOutstanding = 0;
       (allInvoices || []).forEach((inv) => {
         const total = inv.invoice_lines.reduce((s, l) => s + Number(l.amount), 0);
-        totalInvoiced += total;
-        if (inv.status === 'paid') totalPaid += total;
-        else totalOutstanding += total;
+        const usd = toUsd(total, inv.currency);
+        totalInvoiced += usd;
+        if (inv.status === 'paid') totalPaid += usd;
+        else totalOutstanding += usd;
       });
 
-      const totalExpenses = (expensesAll || []).reduce((s, e) => s + Number(e.amount), 0);
+      const totalExpenses = (expensesAll || []).reduce((s, e) => s + toUsd(Number(e.amount), e.currency), 0);
 
       const thirtyDaysOut = new Date();
       thirtyDaysOut.setDate(thirtyDaysOut.getDate() + 30);
@@ -85,13 +105,33 @@ export default function ReportsPage() {
         .lte('due_date', thirtyDaysOut.toISOString().slice(0, 10));
       const upcomingLoanTotal = (upcomingLoans || []).reduce((s, l) => s + Number(l.amount_due), 0);
 
-      setCashSummary({ totalInvoiced, totalPaid, totalOutstanding, totalExpenses, upcomingLoanTotal, upcomingLoanCount: (upcomingLoans || []).length });
+      setCashSummary({
+        totalInvoiced, totalPaid, totalOutstanding, totalExpenses,
+        upcomingLoanTotal, upcomingLoanCount: (upcomingLoans || []).length,
+        hasRates: Object.keys(rateMap).length > 0,
+      });
 
       setLoading(false);
     }
 
     load();
   }, [router]);
+
+  function handleExportProfitability() {
+    exportToCsv('trip_profitability.csv', legProfitability.map((r) => ({
+      leg: r.label, revenue_usd: r.revenue.toFixed(2), expense_usd: r.expense.toFixed(2), profit_usd: r.profit.toFixed(2),
+    })));
+  }
+
+  function handleExportCashSummary() {
+    exportToCsv('cash_summary.csv', [{
+      total_invoiced_usd: cashSummary.totalInvoiced.toFixed(2),
+      total_paid_usd: cashSummary.totalPaid.toFixed(2),
+      total_outstanding_usd: cashSummary.totalOutstanding.toFixed(2),
+      total_expenses_usd: cashSummary.totalExpenses.toFixed(2),
+      upcoming_loan_payments_next_30d: cashSummary.upcomingLoanTotal.toFixed(2),
+    }]);
+  }
 
   if (loading) return <p className="center-text">Loading…</p>;
 
@@ -117,7 +157,15 @@ export default function ReportsPage() {
       </header>
 
       <main className="content">
-        <h2 className="section-title">Cash summary</h2>
+        <div className="trip-card-header" style={{ marginBottom: 8 }}>
+          <h2 className="section-title" style={{ margin: 0 }}>Cash summary (converted to USD)</h2>
+          <button onClick={handleExportCashSummary} style={{ fontSize: 12, padding: '4px 10px' }}>Export CSV</button>
+        </div>
+        {!cashSummary.hasRates && (
+          <p style={{ fontSize: 12, color: '#b25e00', marginBottom: 12 }}>
+            No exchange rates on file yet — non-USD amounts are shown at face value until you add rates in Supabase → exchange_rates.
+          </p>
+        )}
         <div className="stat-grid" style={{ marginBottom: 24 }}>
           <div className="stat-card">
             <p className="stat-label">Total invoiced</p>
@@ -140,11 +188,14 @@ export default function ReportsPage() {
         {cashSummary.upcomingLoanCount > 0 && (
           <div className="trip-card" style={{ marginBottom: 24, borderColor: '#f5c6c0' }}>
             <p className="trip-card-title">Loan repayments due in next 30 days</p>
-            <p className="trip-route">{cashSummary.upcomingLoanCount} payment(s) totaling {cashSummary.upcomingLoanTotal.toFixed(2)}</p>
+            <p className="trip-route">{cashSummary.upcomingLoanCount} payment(s) totaling {cashSummary.upcomingLoanTotal.toFixed(2)} (as entered, not currency-converted)</p>
           </div>
         )}
 
-        <h2 className="section-title">Trip profitability (by leg)</h2>
+        <div className="trip-card-header" style={{ marginBottom: 8 }}>
+          <h2 className="section-title" style={{ margin: 0 }}>Trip profitability (by leg, USD)</h2>
+          <button onClick={handleExportProfitability} style={{ fontSize: 12, padding: '4px 10px' }}>Export CSV</button>
+        </div>
         {legProfitability.length === 0 && (
           <p className="empty-state">No legs with expenses or linked invoices yet.</p>
         )}

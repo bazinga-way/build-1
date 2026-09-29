@@ -9,6 +9,7 @@ export default function CustomersPage() {
   const [expandedId, setExpandedId] = useState(null);
   const [legsByCustomer, setLegsByCustomer] = useState({});
   const [invoicesByCustomer, setInvoicesByCustomer] = useState({});
+  const [rateCardsByCustomer, setRateCardsByCustomer] = useState({});
 
   const [showAdd, setShowAdd] = useState(false);
   const [newName, setNewName] = useState('');
@@ -21,6 +22,12 @@ export default function CustomersPage() {
   const [editCountry, setEditCountry] = useState('');
   const [editContactName, setEditContactName] = useState('');
   const [editContactPhone, setEditContactPhone] = useState('');
+
+  const [showAddRate, setShowAddRate] = useState(null);
+  const [rateOrigin, setRateOrigin] = useState('Dar es Salaam Port');
+  const [rateDestination, setRateDestination] = useState('Somika Sarl, DRC');
+  const [rateAmount, setRateAmount] = useState('');
+  const [rateCurrency, setRateCurrency] = useState('USD');
 
   useEffect(() => {
     async function load() {
@@ -59,6 +66,15 @@ export default function CustomersPage() {
         .eq('customer_id', customer.id)
         .order('issue_date', { ascending: false });
       setInvoicesByCustomer((prev) => ({ ...prev, [customer.id]: invoiceData || [] }));
+    }
+
+    if (!rateCardsByCustomer[customer.id]) {
+      const { data: rateData } = await supabase
+        .from('rate_cards')
+        .select('*')
+        .eq('customer_id', customer.id)
+        .order('effective_date', { ascending: false });
+      setRateCardsByCustomer((prev) => ({ ...prev, [customer.id]: rateData || [] }));
     }
   }
 
@@ -111,6 +127,18 @@ export default function CustomersPage() {
     }
     setCustomers(customers.map((c) => (c.id === customerId ? { ...c, name: editName, country: editCountry, contact_name: editContactName, contact_phone: editContactPhone } : c)));
     setEditingId(null);
+  }
+
+  async function handleAddRateCard(customerId) {
+    if (!rateAmount) { alert('Please enter a rate amount.'); return; }
+    const { data, error } = await supabase
+      .from('rate_cards')
+      .insert({ customer_id: customerId, origin: rateOrigin, destination: rateDestination, rate_amount: Number(rateAmount), currency: rateCurrency })
+      .select()
+      .single();
+    if (error) { alert('Could not save rate card: ' + error.message); return; }
+    setRateCardsByCustomer((prev) => ({ ...prev, [customerId]: [data, ...(prev[customerId] || [])] }));
+    setRateAmount(''); setShowAddRate(null);
   }
 
   if (loading) return <p className="center-text">Loading…</p>;
@@ -174,7 +202,29 @@ export default function CustomersPage() {
                     <div style={{ marginTop: 10, borderTop: '1px solid #eee', paddingTop: 10 }}>
                       <button onClick={() => startEdit(c)} style={{ fontSize: 12, padding: '4px 10px', marginBottom: 10 }}>Edit details</button>
 
-                      <p style={{ fontSize: 13, fontWeight: 600, marginBottom: 6 }}>Trip history</p>
+                      <p style={{ fontSize: 13, fontWeight: 600, marginBottom: 6 }}>Rate cards</p>
+                      {(rateCardsByCustomer[c.id] || []).length === 0 && <p style={{ fontSize: 13, color: '#999' }}>No rates set.</p>}
+                      {(rateCardsByCustomer[c.id] || []).map((r) => (
+                        <div key={r.id} style={{ fontSize: 13, marginBottom: 4 }}>
+                          {r.origin} → {r.destination} · {r.currency} {Number(r.rate_amount).toFixed(2)}
+                        </div>
+                      ))}
+                      {showAddRate !== c.id ? (
+                        <button onClick={() => setShowAddRate(c.id)} style={{ fontSize: 12, padding: '4px 10px', marginTop: 4 }}>+ Add rate</button>
+                      ) : (
+                        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 6, alignItems: 'center' }}>
+                          <input type="text" placeholder="Origin" value={rateOrigin} onChange={(e) => setRateOrigin(e.target.value)} style={{ width: 130 }} />
+                          <input type="text" placeholder="Destination" value={rateDestination} onChange={(e) => setRateDestination(e.target.value)} style={{ width: 130 }} />
+                          <input type="number" placeholder="Rate" value={rateAmount} onChange={(e) => setRateAmount(e.target.value)} style={{ width: 90 }} />
+                          <select value={rateCurrency} onChange={(e) => setRateCurrency(e.target.value)}>
+                            <option value="USD">USD</option><option value="TZS">TZS</option><option value="CDF">CDF</option>
+                          </select>
+                          <button onClick={() => handleAddRateCard(c.id)} style={{ fontSize: 12, padding: '4px 10px' }}>Save</button>
+                          <button onClick={() => setShowAddRate(null)} style={{ fontSize: 12, padding: '4px 10px', background: 'white' }}>Cancel</button>
+                        </div>
+                      )}
+
+                      <p style={{ fontSize: 13, fontWeight: 600, margin: '14px 0 6px' }}>Trip history</p>
                       {(legsByCustomer[c.id] || []).length === 0 && <p style={{ fontSize: 13, color: '#999' }}>No trips yet.</p>}
                       {(legsByCustomer[c.id] || []).map((leg) => (
                         <div key={leg.id} style={{ fontSize: 13, marginBottom: 4 }}>
