@@ -7,6 +7,7 @@ import AssetMaintenanceFinance from '../../components/AssetMaintenanceFinance';
 export default function TrailersPage() {
   const router = useRouter();
   const [trailers, setTrailers] = useState([]);
+  const [search, setSearch] = useState('');
   const [expandedId, setExpandedId] = useState(null);
   const [loading, setLoading] = useState(true);
 
@@ -28,6 +29,11 @@ export default function TrailersPage() {
 
   if (loading) return <p className="center-text">Loading…</p>;
 
+  const filtered = trailers.filter((t) => {
+    if (!search.trim()) return true;
+    return t.plate_no.toLowerCase().includes(search.toLowerCase());
+  });
+
   return (
     <div className="page">
       <header className="topbar">
@@ -38,12 +44,20 @@ export default function TrailersPage() {
       <main className="content">
         <h2 className="section-title">Trailers</h2>
 
-        {trailers.length === 0 && (
-          <p className="empty-state">No trailers yet. Add one in Supabase → Table Editor → trailers.</p>
+        <input
+          type="text"
+          placeholder="Search plate number…"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          style={{ width: '100%', marginBottom: 16 }}
+        />
+
+        {filtered.length === 0 && (
+          <p className="empty-state">No trailers match.</p>
         )}
 
         <div className="trip-list">
-          {trailers.map((t) => (
+          {filtered.map((t) => (
             <div className="trip-card" key={t.id}>
               <div
                 className="trip-card-header"

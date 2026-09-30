@@ -6,6 +6,7 @@ import DocumentUploader from '../../components/DocumentUploader';
 export default function DriversPage() {
   const router = useRouter();
   const [drivers, setDrivers] = useState([]);
+  const [search, setSearch] = useState('');
   const [expandedId, setExpandedId] = useState(null);
   const [loading, setLoading] = useState(true);
 
@@ -62,6 +63,11 @@ export default function DriversPage() {
 
   if (loading) return <p className="center-text">Loading…</p>;
 
+  const filtered = drivers.filter((d) => {
+    if (!search.trim()) return true;
+    return d.full_name.toLowerCase().includes(search.toLowerCase());
+  });
+
   return (
     <div className="page">
       <header className="topbar">
@@ -72,12 +78,20 @@ export default function DriversPage() {
       <main className="content">
         <h2 className="section-title">Drivers</h2>
 
-        {drivers.length === 0 && (
-          <p className="empty-state">No drivers yet. Add one in Supabase → Table Editor → drivers.</p>
+        <input
+          type="text"
+          placeholder="Search drivers…"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          style={{ width: '100%', marginBottom: 16 }}
+        />
+
+        {filtered.length === 0 && (
+          <p className="empty-state">No drivers match.</p>
         )}
 
         <div className="trip-list">
-          {drivers.map((d) => (
+          {filtered.map((d) => (
             <div className="trip-card" key={d.id}>
               <div className="trip-card-header" style={{ cursor: 'pointer' }} onClick={() => toggleExpand(d.id)}>
                 <p className="trip-card-title">{d.full_name}</p>

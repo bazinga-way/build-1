@@ -6,6 +6,7 @@ export default function CustomersPage() {
   const router = useRouter();
   const [customers, setCustomers] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [search, setSearch] = useState('');
   const [expandedId, setExpandedId] = useState(null);
   const [legsByCustomer, setLegsByCustomer] = useState({});
   const [invoicesByCustomer, setInvoicesByCustomer] = useState({});
@@ -143,6 +144,12 @@ export default function CustomersPage() {
 
   if (loading) return <p className="center-text">Loading…</p>;
 
+  const filtered = customers.filter((c) => {
+    if (!search.trim()) return true;
+    const term = search.toLowerCase();
+    return c.name.toLowerCase().includes(term) || c.country?.toLowerCase().includes(term);
+  });
+
   return (
     <div className="page">
       <header className="topbar">
@@ -155,6 +162,14 @@ export default function CustomersPage() {
           <h2 className="section-title" style={{ margin: 0 }}>Customers</h2>
           <button onClick={() => setShowAdd(!showAdd)}>{showAdd ? 'Cancel' : '+ New customer'}</button>
         </div>
+
+        <input
+          type="text"
+          placeholder="Search customers…"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          style={{ width: '100%', marginBottom: 16 }}
+        />
 
         {showAdd && (
           <form className="auth-card" onSubmit={handleAdd} style={{ maxWidth: 'none', marginBottom: 16 }}>
@@ -170,10 +185,10 @@ export default function CustomersPage() {
           </form>
         )}
 
-        {customers.length === 0 && <p className="empty-state">No customers yet.</p>}
+        {filtered.length === 0 && <p className="empty-state">No customers match.</p>}
 
         <div className="trip-list">
-          {customers.map((c) => (
+          {filtered.map((c) => (
             <div className="trip-card" key={c.id}>
               {editingId === c.id ? (
                 <div>
