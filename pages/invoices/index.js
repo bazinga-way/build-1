@@ -3,11 +3,36 @@ import { useRouter } from 'next/router';
 import { supabase } from '../../lib/supabaseClient';
 import { exportToCsv } from '../../lib/csvExport';
 
+const PAGE_SIZE = 20;
+
 export default function InvoicesPage() {
   const router = useRouter();
   const [invoices, setInvoices] = useState([]);
   const [myRole, setMyRole] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [hasMore, setHasMore] = useState(true);
+  const [search, setSearch] = useState('');
+  const [statusFilter, setStatusFilter] = useState('all');
+
+  async function fetchPage(offset) {
+    let query = supabase
+      .from('invoices')
+      .select(`
+        id, invoice_no, currency, status, issue_date, due_date,
+        customer:customers ( name ),
+        invoice_lines ( amount )
+      `)
+      .order('issue_date', { ascending: false })
+      .range(offset, offset + PAGE_SIZE - 1);
+
+    if (statusFilter !== 'all') {
+      query = query.eq('status', statusFilter);
+    }
+
+    const { data } = await query;
+    return data || [];
+  }
 
   useEffect(() => {
     async function load() {
@@ -25,24 +50,32 @@ export default function InvoicesPage() {
         return;
       }
 
-      const { data } = await supabase
-        .from('invoices')
-        .select(`
-          id, invoice_no, currency, status, issue_date, due_date,
-          customer:customers ( name ),
-          invoice_lines ( amount )
-        `)
-        .order('issue_date', { ascending: false });
-
-      setInvoices(data || []);
+      const data = await fetchPage(0);
+      setInvoices(data);
+      setHasMore(data.length === PAGE_SIZE);
       setLoading(false);
     }
 
     load();
-  }, [router]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [router, statusFilter]);
+
+  async function loadMore() {
+    setLoadingMore(true);
+    const data = await fetchPage(invoices.length);
+    setInvoices([...invoices, ...data]);
+    setHasMore(data.length === PAGE_SIZE);
+    setLoadingMore(false);
+  }
+
+  const filtered = invoices.filter((inv) => {
+    if (!search.trim()) return true;
+    const term = search.toLowerCase();
+    return inv.invoice_no.toLowerCase().includes(term) || inv.customer?.name?.toLowerCase().includes(term);
+  });
 
   function handleExport() {
-    exportToCsv('invoices.csv', invoices.map((inv) => ({
+    exportToCsv('invoices.csv', filtered.map((inv) => ({
       invoice_no: inv.invoice_no,
       customer: inv.customer?.name || '',
       status: inv.status,
@@ -85,12 +118,29 @@ export default function InvoicesPage() {
           </div>
         </div>
 
-        {invoices.length === 0 && (
-          <p className="empty-state">No invoices yet.</p>
+        <div style={{ display: 'flex', gap: 8, marginBottom: 16, flexWrap: 'wrap' }}>
+          <input
+            type="text"
+            placeholder="Search invoice # or customer…"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            style={{ flex: 1, minWidth: 180 }}
+          />
+          <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
+            <option value="all">All statuses</option>
+            <option value="draft">Draft</option>
+            <option value="sent">Sent</option>
+            <option value="paid">Paid</option>
+            <option value="overdue">Overdue</option>
+          </select>
+        </div>
+
+        {filtered.length === 0 && (
+          <p className="empty-state">No invoices match.</p>
         )}
 
         <div className="trip-list">
-          {invoices.map((inv) => {
+          {filtered.map((inv) => {
             const total = inv.invoice_lines.reduce((sum, l) => sum + Number(l.amount), 0);
             return (
               <div
@@ -110,6 +160,12 @@ export default function InvoicesPage() {
             );
           })}
         </div>
+
+        {hasMore && !search && (
+          <button onClick={loadMore} disabled={loadingMore} style={{ marginTop: 16 }}>
+            {loadingMore ? 'Loading…' : 'Load more'}
+          </button>
+        )}
       </main>
     </div>
   );
