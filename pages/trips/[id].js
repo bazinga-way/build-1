@@ -15,7 +15,6 @@ export default function TripDetail() {
   const [showAddLeg, setShowAddLeg] = useState(false);
   const [bookingLegId, setBookingLegId] = useState(null);
 
-  // Add-leg form state
   const [newLegType, setNewLegType] = useState('Return');
   const [newOrigin, setNewOrigin] = useState('');
   const [newDestination, setNewDestination] = useState('');
@@ -25,20 +24,19 @@ export default function TripDetail() {
   const [newCargo, setNewCargo] = useState('');
   const [newWeight, setNewWeight] = useState('');
 
-  // Booking form state (for completing a pending leg)
   const [bookAgentId, setBookAgentId] = useState('');
   const [bookNewAgentName, setBookNewAgentName] = useState('');
   const [bookCustomerId, setBookCustomerId] = useState('');
   const [bookCargo, setBookCargo] = useState('');
   const [bookWeight, setBookWeight] = useState('');
 
-  const [expenses, setExpenses] = useState({}); // { legId: [expense, ...] }
+  const [expenses, setExpenses] = useState({});
   const [expandedExpenseLegId, setExpandedExpenseLegId] = useState(null);
   const [expenseCategory, setExpenseCategory] = useState('fuel');
   const [expenseAmount, setExpenseAmount] = useState('');
   const [expenseNotes, setExpenseNotes] = useState('');
 
-  const [statusHistory, setStatusHistory] = useState({}); // { legId: [history, ...] }
+  const [statusHistory, setStatusHistory] = useState({});
   const [expandedHistoryLegId, setExpandedHistoryLegId] = useState(null);
   const [userId, setUserId] = useState(null);
 
@@ -180,12 +178,8 @@ export default function TripDetail() {
     }
 
     setShowAddLeg(false);
-    setNewOrigin('');
-    setNewDestination('');
-    setNewCustomerId('');
-    setNewCustomerName('');
-    setNewCargo('');
-    setNewWeight('');
+    setNewOrigin(''); setNewDestination(''); setNewCustomerId(''); setNewCustomerName('');
+    setNewCargo(''); setNewWeight('');
     load();
   }
 
@@ -228,6 +222,17 @@ export default function TripDetail() {
     load();
   }
 
+  async function handleMarkTripCompleted() {
+    const confirmed = confirm('Mark this round trip as completed? It will move from your active dashboard to Trip History.');
+    if (!confirmed) return;
+    const { error } = await supabase
+      .from('round_trips')
+      .update({ status: 'completed', completed_at: new Date().toISOString() })
+      .eq('id', id);
+    if (error) { alert('Could not complete trip: ' + error.message); return; }
+    router.push('/');
+  }
+
   return (
     <div className="page">
       <header className="topbar">
@@ -236,9 +241,19 @@ export default function TripDetail() {
       </header>
 
       <main className="content">
-        <h2 className="section-title">
-          {roundTrip.truck?.plate_no} · {roundTrip.driver?.full_name}
-        </h2>
+        <div className="trip-card-header" style={{ marginBottom: 16 }}>
+          <h2 className="section-title" style={{ margin: 0 }}>
+            {roundTrip.truck?.plate_no} · {roundTrip.driver?.full_name}
+          </h2>
+          {roundTrip.status === 'active' && (
+            <button onClick={handleMarkTripCompleted} style={{ fontSize: 12, padding: '6px 12px' }}>
+              Mark trip completed
+            </button>
+          )}
+          {roundTrip.status === 'completed' && (
+            <span className="pill pill-success">completed</span>
+          )}
+        </div>
 
         <div className="trip-list" style={{ marginBottom: 16 }}>
           {legs.map((leg) => (
@@ -369,7 +384,7 @@ export default function TripDetail() {
           ))}
         </div>
 
-        {!showAddLeg && (
+        {!showAddLeg && roundTrip.status === 'active' && (
           <button onClick={() => setShowAddLeg(true)}>+ Add another leg</button>
         )}
 
