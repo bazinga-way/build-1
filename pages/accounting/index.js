@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/router';
 import { supabase } from '../../lib/supabaseClient';
+import { exportToCsv } from '../../lib/csvExport';
 
 export default function AccountingPage() {
   const router = useRouter();
@@ -12,6 +13,8 @@ export default function AccountingPage() {
   const [entries, setEntries] = useState([]);
   const [vendors, setVendors] = useState([]);
   const [bills, setBills] = useState([]);
+  const [statementTotals, setStatementTotals] = useState(null);
+  const [hasRates, setHasRates] = useState(false);
 
   // New journal entry form
   const [jeDescription, setJeDescription] = useState('');
@@ -49,6 +52,46 @@ export default function AccountingPage() {
       setEntries(jeRes.data || []);
       setVendors(vendorRes.data || []);
       setBills(billRes.data || []);
+
+      // Full ledger history (not limited to 30) for accurate financial statements
+      const { data: allLines } = await supabase
+        .from('journal_lines')
+        .select('debit, credit, account:chart_of_accounts(account_type), entry:journal_entries(currency)');
+
+      const { data: rates } = await supabase
+        .from('exchange_rates')
+        .select('from_currency, rate, rate_date')
+        .eq('to_currency', 'USD')
+        .order('rate_date', { ascending: false });
+      const rateMap = {};
+      (rates || []).forEach((r) => {
+        if (!(r.from_currency in rateMap)) rateMap[r.from_currency] = Number(r.rate);
+      });
+      setHasRates(Object.keys(rateMap).length > 0);
+      const toUsd = (amount, currency) => {
+        if (!amount) return 0;
+        if (currency === 'USD') return amount;
+        if (rateMap[currency]) return amount * rateMap[currency];
+        return amount;
+      };
+
+      const totals = { asset: 0, liability: 0, equity: 0, income: 0, expense: 0 };
+      (allLines || []).forEach((line) => {
+        const type = line.account?.account_type;
+        if (!type) return;
+        const currency = line.entry?.currency || 'USD';
+        const debit = toUsd(Number(line.debit) || 0, currency);
+        const credit = toUsd(Number(line.credit) || 0, currency);
+        if (type === 'asset' || type === 'expense') {
+          totals[type] += debit - credit;
+        } else {
+          totals[type] += credit - debit;
+        }
+      });
+
+      const netProfit = totals.income - totals.expense;
+      setStatementTotals({ ...totals, netProfit });
+
       setLoading(false);
     }
     load();
@@ -156,17 +199,89 @@ export default function AccountingPage() {
         <h2 className="section-title">Accounting</h2>
 
         <div className="status-pills" style={{ marginBottom: 16 }}>
-          {['ledger', 'accounts', 'ap'].map((t) => (
+          {['statements', 'ledger', 'accounts', 'ap'].map((t) => (
             <button
               key={t}
               onClick={() => setTab(t)}
               className="pill pill-button"
               style={{ border: tab === t ? 'none' : '1px solid #ddd', background: tab === t ? '#1a56db' : 'white', color: tab === t ? 'white' : '#333' }}
             >
-              {t === 'ledger' ? 'Journal' : t === 'accounts' ? 'Chart of accounts' : 'Bills (AP)'}
+              {t === 'statements' ? 'Statements' : t === 'ledger' ? 'Journal' : t === 'accounts' ? 'Chart of accounts' : 'Bills (AP)'}
             </button>
           ))}
         </div>
+
+        {tab === 'statements' && statementTotals && (
+          <>
+            {!hasRates && (
+              <p style={{ fontSize: 12, color: '#b25e00', marginBottom: 12 }}>
+                No exchange rates on file — non-USD entries are shown at face value. Add rates in Supabase → exchange_rates for accurate conversion.
+              </p>
+            )}
+
+            <div className="trip-card" style={{ marginBottom: 16 }}>
+              <div className="trip-card-header" style={{ marginBottom: 8 }}>
+                <p className="trip-card-title">Profit &amp; Loss (all-time, USD)</p>
+                <button
+                  onClick={() => exportToCsv('profit_and_loss.csv', [{
+                    revenue_usd: statementTotals.income.toFixed(2),
+                    expenses_usd: statementTotals.expense.toFixed(2),
+                    net_profit_usd: statementTotals.netProfit.toFixed(2),
+                  }])}
+                  style={{ fontSize: 11, padding: '3px 8px' }}
+                >
+                  Export CSV
+                </button>
+              </div>
+              <table style={{ width: '100%', fontSize: 13 }}>
+                <tbody>
+                  <tr><td style={{ padding: '4px 0' }}>Revenue</td><td style={{ textAlign: 'right' }}>{statementTotals.income.toFixed(2)}</td></tr>
+                  <tr><td style={{ padding: '4px 0' }}>Expenses</td><td style={{ textAlign: 'right' }}>{statementTotals.expense.toFixed(2)}</td></tr>
+                  <tr style={{ borderTop: '1px solid #ddd', fontWeight: 600 }}>
+                    <td style={{ padding: '6px 0' }}>Net profit</td>
+                    <td style={{ textAlign: 'right', color: statementTotals.netProfit >= 0 ? '#1a7f37' : '#d92d20' }}>
+                      {statementTotals.netProfit.toFixed(2)}
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+
+            <div className="trip-card">
+              <div className="trip-card-header" style={{ marginBottom: 8 }}>
+                <p className="trip-card-title">Balance Sheet (as of today, USD)</p>
+                <button
+                  onClick={() => exportToCsv('balance_sheet.csv', [{
+                    assets_usd: statementTotals.asset.toFixed(2),
+                    liabilities_usd: statementTotals.liability.toFixed(2),
+                    equity_usd: statementTotals.equity.toFixed(2),
+                    retained_earnings_usd: statementTotals.netProfit.toFixed(2),
+                  }])}
+                  style={{ fontSize: 11, padding: '3px 8px' }}
+                >
+                  Export CSV
+                </button>
+              </div>
+              <table style={{ width: '100%', fontSize: 13 }}>
+                <tbody>
+                  <tr><td style={{ padding: '4px 0' }}>Assets</td><td style={{ textAlign: 'right' }}>{statementTotals.asset.toFixed(2)}</td></tr>
+                  <tr><td style={{ padding: '4px 0' }}>Liabilities</td><td style={{ textAlign: 'right' }}>{statementTotals.liability.toFixed(2)}</td></tr>
+                  <tr><td style={{ padding: '4px 0' }}>Equity (posted)</td><td style={{ textAlign: 'right' }}>{statementTotals.equity.toFixed(2)}</td></tr>
+                  <tr><td style={{ padding: '4px 0' }}>Retained earnings (net profit to date)</td><td style={{ textAlign: 'right' }}>{statementTotals.netProfit.toFixed(2)}</td></tr>
+                  <tr style={{ borderTop: '1px solid #ddd', fontWeight: 600 }}>
+                    <td style={{ padding: '6px 0' }}>Liabilities + Equity</td>
+                    <td style={{ textAlign: 'right' }}>{(statementTotals.liability + statementTotals.equity + statementTotals.netProfit).toFixed(2)}</td>
+                  </tr>
+                </tbody>
+              </table>
+              <p style={{ fontSize: 12, marginTop: 8, color: Math.abs(statementTotals.asset - (statementTotals.liability + statementTotals.equity + statementTotals.netProfit)) < 0.01 ? '#1a7f37' : '#d92d20' }}>
+                {Math.abs(statementTotals.asset - (statementTotals.liability + statementTotals.equity + statementTotals.netProfit)) < 0.01
+                  ? '✓ Balances — Assets = Liabilities + Equity'
+                  : '⚠ Does not balance — check for manual entries posted outside the normal flow'}
+              </p>
+            </div>
+          </>
+        )}
 
         {tab === 'accounts' && (
           <div className="trip-list">
